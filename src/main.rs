@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::prelude::*;
 
 fn main() {
     let action = std::env::args().nth(1).expect("Please specify an action");
@@ -24,7 +23,7 @@ fn main() {
                 None => println!("'{}' is not present in todo list", i),
                 Some(_) => match todo.save() {
                     Ok(_) => println!("Todo completed"),
-                    Err(why) => println!("An error occured: {}", why),
+                    Err(why) => println!("An error occurred: {}", why),
                 },
             },
             None => println!("No item specified"),
@@ -44,34 +43,30 @@ impl Todo {
     }
 
     fn save(self) -> Result<(), std::io::Error> {
-        let mut content = String::new();
-        for (k, v) in self.map {
-            let record = format!("{}\t{}\n", k, v);
-            content.push_str(&record)
-        }
-        fs::write("db.txt", content)
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open("db.json")?;
+
+        serde_json::to_writer_pretty(file, &self.map)?;
+
+        Ok(())
     }
 
     fn new() -> Result<Todo, std::io::Error> {
-        let mut file = fs::OpenOptions::new()
+        let file = fs::OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
-            .open("db.txt")?;
+            .open("db.json")?;
 
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-
-        let mut map = HashMap::new();
-
-        for entries in content.lines() {
-            let mut values = entries.split("\t");
-            let key = values.next().expect("No key");
-            let val = values.next().expect("No value");
-            map.insert(String::from(key), val.parse::<bool>().unwrap());
+        match serde_json::from_reader(file) {
+            Ok(map) => Ok(Todo { map }),
+            Err(e) if e.is_eof() => Ok(Todo {
+                map: HashMap::new(),
+            }),
+            Err(e) => panic!("An error occurred: {}", e),
         }
-
-        Ok(Todo { map })
     }
 
     fn complete(&mut self, key: &String) -> Option<()> {
@@ -82,13 +77,22 @@ impl Todo {
     }
 
     fn list() -> Result<(), std::io::Error> {
-        let content = fs::read_to_string("db.txt")?;
+        let file = fs::File::open("db.json")?;
 
-        for entries in content.lines() {
-            let mut values = entries.split("\t");
-            let key = values.next().expect("No key");
-            let val = values.next().expect("No value");
-            println!("{}\t{}", key, val)
+        let todos = match serde_json::from_reader(file) {
+            Ok(map) => Todo { map },
+            Err(e) if e.is_eof() => Todo {
+                map: HashMap::new(),
+            },
+            Err(e) => panic!("Something went wrong: {}", e),
+        };
+
+        if todos.map.keys().len() == 0 {
+            println!("No todos found")
+        } else {
+            for (k, v) in todos.map {
+                println!("{}\t{}", k, v)
+            }
         }
 
         Ok(())
